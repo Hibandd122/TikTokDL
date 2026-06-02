@@ -1,0 +1,78 @@
+name: Build unsigned IPA
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build TikTokDL.ipa
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build (unsigned, iphoneos)
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project TikTokDL.xcodeproj \
+            -scheme TikTokDL \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            ONLY_ACTIVE_ARCH=NO \
+            clean build
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find build/Build/Products/Release-iphoneos -maxdepth 2 -type d -name "TikTokDL.app" | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::TikTokDL.app not found"
+            exit 1
+          fi
+          echo "Found app at: $APP_PATH"
+          mkdir -p payload-staging/Payload
+          cp -R "$APP_PATH" payload-staging/Payload/
+          cd payload-staging
+          zip -qr ../TikTokDL-unsigned.ipa Payload
+          cd ..
+          ls -lh TikTokDL-unsigned.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TikTokDL-unsigned-ipa
+          path: TikTokDL-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create release (only on tag push)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: TikTokDL-unsigned.ipa
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
