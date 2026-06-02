@@ -9,7 +9,25 @@ struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
+struct AnimatedGradientView: View {
+    @State private var animateGradient = false
+    var body: some View {
+        LinearGradient(
+            colors: [Color.purple.opacity(0.15), Color.blue.opacity(0.15), Color.pink.opacity(0.1)],
+            startPoint: animateGradient ? .topLeading : .bottomLeading,
+            endPoint: animateGradient ? .bottomTrailing : .topTrailing
+        )
+        .ignoresSafeArea()
+        .onAppear {
+            withAnimation(.linear(duration: 5.0).repeatForever(autoreverses: true)) {
+                animateGradient.toggle()
+            }
+        }
+    }
+}
+
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var settings: AppSettings
     @StateObject private var vm = DownloadViewModel()
     @State private var showSettings = false
@@ -17,22 +35,75 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    urlInput
-                    if let preview = vm.preview { previewCard(preview) }
-                    statusView
+            ZStack(alignment: .bottom) {
+                // Animated Premium Background
+                Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+                AnimatedGradientView()
+                
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Hero Section
+                        VStack(spacing: 8) {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .font(.system(size: 64, weight: .bold))
+                                .foregroundStyle(
+                                    LinearGradient(colors: [.cyan, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                )
+                                .shadow(color: .purple.opacity(0.4), radius: 12, y: 6)
+                                .padding(.bottom, 4)
+                            
+                            Text("TikTok DL")
+                                .font(.system(size: 32, weight: .heavy, design: .rounded))
+                                .foregroundStyle(.primary)
+                        }
+                        .padding(.top, 24)
+                        .padding(.bottom, 8)
+
+                        urlInputCard
+                        
+                        if let preview = vm.preview {
+                            previewCard(preview)
+                                .transition(.scale(scale: 0.9).combined(with: .opacity).combined(with: .offset(y: 20)))
+                        }
+                        
+                        // Extra spacing at bottom for floating status
+                        Spacer().frame(height: 80)
+                    }
+                    .padding()
                 }
-                .padding()
+                
+                // Floating Status Toast
+                if !vm.status.isEmpty {
+                    floatingStatusToast
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
-            .navigationTitle("TikTok DL")
+            .navigationTitle("Trang chủ")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    if vm.lastFileToShare != nil {
-                        Button { showShare = true } label: { Image(systemName: "square.and.arrow.up") }
+                    HStack(spacing: 16) {
+                        if vm.lastFileToShare != nil {
+                            Button {
+                                Haptics.impact()
+                                showShare = true
+                            } label: { 
+                                Image(systemName: "square.and.arrow.up.circle.fill")
+                                    .symbolRenderingMode(.hierarchical)
+                                    .font(.title2)
+                                    .foregroundStyle(.blue)
+                            }
+                            .transition(.scale.combined(with: .opacity))
+                        }
+                        Button {
+                            Haptics.impact()
+                            showSettings = true
+                        } label: { 
+                            Image(systemName: "gearshape.circle.fill")
+                                .symbolRenderingMode(.hierarchical)
+                                .font(.title2)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -41,114 +112,277 @@ struct ContentView: View {
                 if let url = vm.lastFileToShare { ShareSheet(items: [url]) }
             }
             .onAppear { vm.bind(settings) }
+            .onChange(of: scenePhase) { newPhase in
+                if newPhase == .active {
+                    vm.checkClipboardForTikTokLink()
+                }
+            }
         }
     }
 
-    private var urlInput: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Link TikTok").font(.subheadline).foregroundStyle(.secondary)
+    private var urlInputCard: some View {
+        VStack(spacing: 16) {
             HStack {
-                TextField("https://www.tiktok.com/@user/video/...", text: $vm.inputURL)
+                Image(systemName: "link")
+                    .foregroundColor(.secondary)
+                    .font(.system(size: 20))
+                
+                TextField("Dán link TikTok vào đây...", text: $vm.inputURL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
                     .submitLabel(.go)
-                    .onSubmit { vm.fetchPreview() }
-                Button {
-                    if let s = UIPasteboard.general.string { vm.inputURL = s }
-                } label: { Image(systemName: "doc.on.clipboard") }
+                    .onSubmit {
+                        if vm.isValidTikTokURL {
+                            vm.fetchPreview()
+                        }
+                    }
+                
                 if !vm.inputURL.isEmpty {
-                    Button { vm.inputURL = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    Button { 
+                        vm.inputURL = ""
+                        Haptics.impact()
+                    } label: { 
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.tertiary) 
+                            .font(.system(size: 20))
+                    }
+                }
+                
+                Divider().frame(height: 24)
+                
+                Button {
+                    if let s = UIPasteboard.general.string { 
+                        withAnimation(.spring()) { vm.inputURL = s }
+                        Haptics.success()
+                    }
+                } label: { 
+                    Image(systemName: "doc.on.clipboard.fill")
+                        .foregroundStyle(Color.accentColor)
+                        .font(.system(size: 20))
                 }
             }
-            .padding(10)
-            .background(RoundedRectangle(cornerRadius: 10).fill(.ultraThinMaterial))
+            .padding(16)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.primary.opacity(0.05), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.05), radius: 8, y: 3)
 
-            HStack {
-                Button(action: vm.fetchPreview) {
-                    Label("Phân tích", systemImage: "magnifyingglass")
-                        .frame(maxWidth: .infinity)
+            HStack(spacing: 12) {
+                Button {
+                    vm.fetchPreview()
+                } label: {
+                    HStack {
+                        if vm.isLoading {
+                            ProgressView().tint(.white)
+                        } else {
+                            Image(systemName: "sparkles.tv")
+                        }
+                        Text(vm.isLoading ? "Đang xử lý..." : "Phân tích")
+                            .fontWeight(.bold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(
+                        LinearGradient(
+                            colors: vm.isValidTikTokURL ? [.blue, .purple] : [.gray.opacity(0.5), .gray.opacity(0.6)],
+                            startPoint: .leading, endPoint: .trailing
+                        )
+                    )
+                    .foregroundStyle(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .shadow(color: vm.isValidTikTokURL ? .blue.opacity(0.3) : .clear, radius: 8, y: 4)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(vm.isLoading)
-
-                Button(action: vm.clear) {
-                    Label("Xoá", systemImage: "trash").frame(maxWidth: .infinity)
+                .disabled(vm.isLoading || vm.inputURL.isEmpty)
+                .animation(.easeInOut, value: vm.isValidTikTokURL)
+                
+                if !vm.inputURL.isEmpty || vm.preview != nil {
+                    Button {
+                        vm.clear()
+                    } label: {
+                        Image(systemName: "trash")
+                            .fontWeight(.bold)
+                            .padding()
+                            .frame(width: 56, height: 56)
+                            .background(.regularMaterial)
+                            .foregroundStyle(.red)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .shadow(color: .black.opacity(0.05), radius: 5, y: 2)
+                    }
+                    .transition(.scale.combined(with: .opacity))
                 }
-                .buttonStyle(.bordered)
-                .disabled(vm.isLoading)
             }
         }
     }
 
     @ViewBuilder
     private func previewCard(_ preview: TikTokPreview) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(preview.author).font(.headline)
-            if !preview.desc.isEmpty {
-                Text(preview.desc).font(.subheadline).foregroundStyle(.secondary).lineLimit(4)
+        VStack(alignment: .leading, spacing: 20) {
+            // Author and Info
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: [.purple, .pink, .orange], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 56, height: 56)
+                    
+                    Text(String(preview.author.prefix(1).uppercased()))
+                        .font(.title2.bold())
+                        .foregroundStyle(.white)
+                }
+                .shadow(color: .pink.opacity(0.3), radius: 8, y: 4)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("@\(preview.author)")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: preview.type == .slideshow ? "photo.on.rectangle.angled" : "play.rectangle.fill")
+                        Text(preview.type == .slideshow ? "\(preview.imageURLs.count) ảnh" : "Video TikTok")
+                    }
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.primary.opacity(0.05))
+                    .clipShape(Capsule())
+                    .foregroundStyle(.secondary)
+                }
+                Spacer()
             }
-
-            switch preview.type {
-            case .video:
-                Button {
-                    vm.download(kind: .video)
-                } label: {
-                    Label("Tải Video", systemImage: "arrow.down.circle.fill").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(vm.isLoading)
-
-            case .slideshow:
-                Button {
-                    vm.download(kind: .slideshow)
-                } label: {
-                    Label("Tải tất cả (.zip)", systemImage: "square.and.arrow.down.on.square")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(vm.isLoading)
-
-                Text("Từng ảnh:").font(.caption).foregroundStyle(.secondary)
+            
+            if !preview.desc.isEmpty {
+                Text(preview.desc)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.primary.opacity(0.85))
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            
+            // Slideshow Thumbnails
+            if preview.type == .slideshow, !preview.imageURLs.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                    LazyHStack(spacing: 12) {
                         ForEach(Array(preview.imageURLs.enumerated()), id: \.offset) { idx, url in
-                            Button {
-                                vm.download(kind: .singleImage, imageURL: url)
-                            } label: {
-                                VStack(spacing: 4) {
-                                    Image(systemName: "photo")
-                                    Text("#\(idx + 1)").font(.caption2)
+                            ZStack(alignment: .bottomTrailing) {
+                                AsyncImage(url: URL(string: url)) { phase in
+                                    if let image = phase.image {
+                                        image
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fill)
+                                    } else {
+                                        Rectangle()
+                                            .fill(Color(uiColor: .tertiarySystemGroupedBackground))
+                                            .overlay(ProgressView())
+                                    }
                                 }
-                                .frame(width: 60, height: 60)
-                                .background(RoundedRectangle(cornerRadius: 8).fill(.thinMaterial))
+                                .frame(width: 120, height: 180)
+                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                
+                                // Gradient overlay for better button visibility
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(LinearGradient(colors: [.clear, .black.opacity(0.4)], startPoint: .top, endPoint: .bottom))
+                                
+                                Button {
+                                    vm.download(kind: .singleImage, imageURL: url)
+                                } label: {
+                                    Image(systemName: "arrow.down.circle.fill")
+                                        .font(.title)
+                                        .symbolRenderingMode(.palette)
+                                        .foregroundStyle(.white, .ultraThinMaterial)
+                                        .padding(8)
+                                }
                             }
-                            .disabled(vm.isLoading)
+                            .shadow(color: .black.opacity(0.1), radius: 5, y: 3)
                         }
                     }
+                    .padding(.vertical, 8)
                 }
             }
 
-            if preview.audioURL != nil {
-                Button {
-                    vm.download(kind: .audio)
-                } label: {
-                    Label("Tải Audio (.mp3)", systemImage: "music.note").frame(maxWidth: .infinity)
+            // Action Buttons
+            VStack(spacing: 12) {
+                if preview.type == .video {
+                    actionButton(
+                        title: "Lưu Video Mật Độ Cao", 
+                        icon: "video.fill.badge.down", 
+                        colors: [.pink, .red],
+                        action: { vm.download(kind: .video) }
+                    )
+                } else if preview.type == .slideshow {
+                    actionButton(
+                        title: "Tải Tất Cả Ảnh (.zip)", 
+                        icon: "square.and.arrow.down.on.square.fill", 
+                        colors: [.pink, .red],
+                        action: { vm.download(kind: .slideshow) }
+                    )
                 }
-                .buttonStyle(.bordered)
-                .disabled(vm.isLoading)
+                
+                if preview.audioURL != nil {
+                    actionButton(
+                        title: "Tải Nhạc Nền (.mp3)", 
+                        icon: "music.note", 
+                        colors: [Color.gray.opacity(0.8), Color.gray],
+                        action: { vm.download(kind: .audio) }
+                    )
+                }
             }
         }
-        .padding()
-        .background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
+        .padding(24)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .stroke(Color.primary.opacity(0.05), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.08), radius: 15, y: 8)
     }
 
-    @ViewBuilder
-    private var statusView: some View {
-        HStack(spacing: 8) {
-            if vm.isLoading { ProgressView().controlSize(.small) }
-            Text(vm.status).font(.footnote).foregroundStyle(.secondary)
+    private func actionButton(title: String, icon: String, colors: [Color], action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+        } label: {
+            HStack {
+                Image(systemName: icon)
+                    .font(.headline)
+                Text(title).fontWeight(.bold)
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing))
+            .foregroundStyle(.white)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: colors.last!.opacity(0.4), radius: 8, y: 4)
         }
+        .disabled(vm.isLoading)
+        .opacity(vm.isLoading ? 0.6 : 1.0)
+    }
+    
+    private var floatingStatusToast: some View {
+        HStack(spacing: 12) {
+            if vm.isLoading {
+                ProgressView().tint(.white)
+            } else if vm.status.contains("✓") {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            } else {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+            }
+            
+            Text(vm.status.replacingOccurrences(of: "✓ ", with: ""))
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundStyle(.white)
+                .lineLimit(2)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(Color.black.opacity(0.8))
+        .clipShape(Capsule())
+        .shadow(color: .black.opacity(0.2), radius: 10, y: 5)
+        .padding(.bottom, 16)
     }
 }
 
@@ -165,21 +399,30 @@ struct SettingsView: View {
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
                 } header: {
-                    Text("Backend URL")
+                    Text("Backend Server")
                 } footer: {
-                    Text("URL Flask backend chạy app HtmlWeb. Mặc định: \(AppSettings.defaultURL)")
+                    Text("Nhập URL của Flask server đang chạy HtmlWeb.\nMặc định: \(AppSettings.defaultURL)")
                 }
 
                 Section {
-                    Button("Khôi phục mặc định") {
-                        settings.serverBaseURL = AppSettings.defaultURL
+                    Button(role: .destructive) {
+                        withAnimation { settings.serverBaseURL = AppSettings.defaultURL }
+                        Haptics.success()
+                    } label: {
+                        HStack {
+                            Text("Khôi phục mặc định")
+                            Spacer()
+                            Image(systemName: "arrow.counterclockwise")
+                        }
                     }
                 }
             }
             .navigationTitle("Cài đặt")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Xong") { dismiss() }
+                        .fontWeight(.bold)
                 }
             }
         }
