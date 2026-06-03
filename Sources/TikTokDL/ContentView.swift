@@ -9,20 +9,38 @@ struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
-struct AnimatedGradientView: View {
-    @State private var animateGradient = false
+struct AmbientBackgroundView: View {
+    @State private var animate = false
+    @Environment(\.colorScheme) var colorScheme
+    
     var body: some View {
-        LinearGradient(
-            colors: [Color.purple.opacity(0.15), Color.blue.opacity(0.15), Color.pink.opacity(0.1)],
-            startPoint: animateGradient ? .topLeading : .bottomLeading,
-            endPoint: animateGradient ? .bottomTrailing : .topTrailing
-        )
-        .ignoresSafeArea()
+        ZStack {
+            Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+            
+            Circle()
+                .fill(Color.purple.opacity(colorScheme == .dark ? 0.4 : 0.25))
+                .frame(width: 350, height: 350)
+                .offset(x: animate ? 120 : -120, y: animate ? -150 : 150)
+                .blur(radius: 90)
+            
+            Circle()
+                .fill(Color.cyan.opacity(colorScheme == .dark ? 0.4 : 0.25))
+                .frame(width: 300, height: 300)
+                .offset(x: animate ? -150 : 150, y: animate ? 120 : -100)
+                .blur(radius: 80)
+                
+            Circle()
+                .fill(Color.pink.opacity(colorScheme == .dark ? 0.4 : 0.2))
+                .frame(width: 400, height: 400)
+                .offset(x: animate ? 50 : -100, y: animate ? 100 : -200)
+                .blur(radius: 100)
+        }
         .onAppear {
-            withAnimation(.linear(duration: 5.0).repeatForever(autoreverses: true)) {
-                animateGradient.toggle()
+            withAnimation(.easeInOut(duration: 8).repeatForever(autoreverses: true)) {
+                animate.toggle()
             }
         }
+        .ignoresSafeArea()
     }
 }
 
@@ -37,27 +55,35 @@ struct ContentView: View {
         NavigationStack {
             ZStack(alignment: .bottom) {
                 // Animated Premium Background
-                Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
-                AnimatedGradientView()
+                AmbientBackgroundView()
                 
                 ScrollView {
                     VStack(spacing: 24) {
                         // Hero Section
-                        VStack(spacing: 8) {
-                            Image(systemName: "arrow.down.circle.fill")
-                                .font(.system(size: 64, weight: .bold))
-                                .foregroundStyle(
-                                    LinearGradient(colors: [.cyan, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                )
-                                .shadow(color: .purple.opacity(0.4), radius: 12, y: 6)
-                                .padding(.bottom, 4)
+                        VStack(spacing: 12) {
+                            ZStack {
+                                Circle()
+                                    .fill(LinearGradient(colors: [.cyan.opacity(0.2), .purple.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .frame(width: 90, height: 90)
+                                    .blur(radius: 10)
+                                
+                                Image(systemName: "arrow.down.to.line.circle.fill")
+                                    .font(.system(size: 68, weight: .bold))
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(.white, LinearGradient(colors: [.cyan, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .shadow(color: .purple.opacity(0.5), radius: 15, y: 8)
+                            }
+                            .padding(.bottom, 4)
                             
                             Text("TikTok DL")
-                                .font(.system(size: 32, weight: .heavy, design: .rounded))
-                                .foregroundStyle(.primary)
+                                .font(.system(size: 36, weight: .heavy, design: .rounded))
+                                .foregroundStyle(
+                                    LinearGradient(colors: [.primary, .primary.opacity(0.7)], startPoint: .top, endPoint: .bottom)
+                                )
+                                .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
                         }
-                        .padding(.top, 24)
-                        .padding(.bottom, 8)
+                        .padding(.top, 32)
+                        .padding(.bottom, 12)
 
                         urlInputCard
                         
@@ -162,14 +188,14 @@ struct ContentView: View {
                         .font(.system(size: 20))
                 }
             }
-            .padding(16)
-            .background(.regularMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .padding(18)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.primary.opacity(0.05), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(LinearGradient(colors: [.white.opacity(0.3), .clear], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.05), radius: 8, y: 3)
+            .shadow(color: .black.opacity(0.1), radius: 15, y: 8)
 
             HStack(spacing: 12) {
                 Button {
@@ -207,10 +233,11 @@ struct ContentView: View {
                             .fontWeight(.bold)
                             .padding()
                             .frame(width: 56, height: 56)
-                            .background(.regularMaterial)
+                            .background(.ultraThinMaterial)
                             .foregroundStyle(.red)
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .shadow(color: .black.opacity(0.05), radius: 5, y: 2)
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.red.opacity(0.2), lineWidth: 1))
+                            .shadow(color: .red.opacity(0.15), radius: 8, y: 4)
                     }
                     .transition(.scale.combined(with: .opacity))
                 }
@@ -336,9 +363,9 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .stroke(Color.primary.opacity(0.05), lineWidth: 1)
+                .stroke(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.0)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.08), radius: 15, y: 8)
+        .shadow(color: .black.opacity(0.15), radius: 25, y: 15)
     }
 
     private func actionButton(title: String, icon: String, colors: [Color], action: @escaping () -> Void) -> some View {
