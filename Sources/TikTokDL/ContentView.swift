@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import AVKit
 
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
@@ -75,7 +76,7 @@ struct ContentView: View {
                             }
                             .padding(.bottom, 4)
                             
-                            Text("TikTok DL")
+                            Text("TikTok & Douyin DL")
                                 .font(.system(size: 36, weight: .heavy, design: .rounded))
                                 .foregroundStyle(
                                     LinearGradient(colors: [.primary, .primary.opacity(0.7)], startPoint: .top, endPoint: .bottom)
@@ -90,6 +91,11 @@ struct ContentView: View {
                         if let preview = vm.preview {
                             previewCard(preview)
                                 .transition(.scale(scale: 0.9).combined(with: .opacity).combined(with: .offset(y: 20)))
+                        }
+
+                        if !vm.history.isEmpty {
+                            historySection
+                                .transition(.opacity)
                         }
                         
                         // Extra spacing at bottom for floating status
@@ -140,7 +146,7 @@ struct ContentView: View {
             .onAppear { vm.bind(settings) }
             .onChange(of: scenePhase) { newPhase in
                 if newPhase == .active {
-                    vm.checkClipboardForTikTokLink()
+                    vm.checkClipboardForLink()
                 }
             }
         }
@@ -153,13 +159,13 @@ struct ContentView: View {
                     .foregroundColor(.secondary)
                     .font(.system(size: 20))
                 
-                TextField("Dán link TikTok vào đây...", text: $vm.inputURL)
+                TextField("Dán link TikTok hoặc Douyin vào đây...", text: $vm.inputURL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
                     .submitLabel(.go)
                     .onSubmit {
-                        if vm.isValidTikTokURL {
+                        if vm.isValidURL {
                             vm.fetchPreview()
                         }
                     }
@@ -214,16 +220,16 @@ struct ContentView: View {
                     .padding()
                     .background(
                         LinearGradient(
-                            colors: vm.isValidTikTokURL ? [.blue, .purple] : [.gray.opacity(0.5), .gray.opacity(0.6)],
+                            colors: vm.isValidURL ? [.blue, .purple] : [.gray.opacity(0.5), .gray.opacity(0.6)],
                             startPoint: .leading, endPoint: .trailing
                         )
                     )
                     .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .shadow(color: vm.isValidTikTokURL ? .blue.opacity(0.3) : .clear, radius: 8, y: 4)
+                    .shadow(color: vm.isValidURL ? .blue.opacity(0.3) : .clear, radius: 8, y: 4)
                 }
                 .disabled(vm.isLoading || vm.inputURL.isEmpty)
-                .animation(.easeInOut, value: vm.isValidTikTokURL)
+                .animation(.easeInOut, value: vm.isValidURL)
                 
                 if !vm.inputURL.isEmpty || vm.preview != nil {
                     Button {
@@ -268,7 +274,7 @@ struct ContentView: View {
                     
                     HStack(spacing: 4) {
                         Image(systemName: preview.type == .slideshow ? "photo.on.rectangle.angled" : "play.rectangle.fill")
-                        Text(preview.type == .slideshow ? "\(preview.imageURLs.count) ảnh" : "Video TikTok")
+                        Text(preview.type == .slideshow ? "\(preview.imageURLs.count) ảnh" : "Video TikTok/Douyin")
                     }
                     .font(.caption)
                     .fontWeight(.medium)
@@ -330,6 +336,16 @@ struct ContentView: View {
                 }
             }
 
+            if preview.type == .video, let videoURL = preview.videoURL, let baseURL = settings.normalizedBaseURL() {
+                let proxyStr = "\(baseURL.absoluteString)/api/tiktok/proxy?url=\(videoURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
+                if let proxyURL = URL(string: proxyStr) {
+                    VideoPlayerView(url: proxyURL)
+                        .frame(height: 220)
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .shadow(color: .black.opacity(0.15), radius: 10, y: 6)
+                }
+            }
+
             // Action Buttons
             VStack(spacing: 12) {
                 if preview.type == .video {
@@ -341,9 +357,15 @@ struct ContentView: View {
                     )
                 } else if preview.type == .slideshow {
                     actionButton(
+                        title: "Lưu Tất Cả Ảnh vào Album", 
+                        icon: "photo.on.rectangle.fill", 
+                        colors: [.pink, .red],
+                        action: { vm.downloadAllImagesToPhotos() }
+                    )
+                    actionButton(
                         title: "Tải Tất Cả Ảnh (.zip)", 
                         icon: "square.and.arrow.down.on.square.fill", 
-                        colors: [.pink, .red],
+                        colors: [Color.blue.opacity(0.8), Color.blue],
                         action: { vm.download(kind: .slideshow) }
                     )
                 }
@@ -410,6 +432,117 @@ struct ContentView: View {
         .clipShape(Capsule())
         .shadow(color: .black.opacity(0.2), radius: 10, y: 5)
         .padding(.bottom, 16)
+    }
+
+    private var historySection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("LỊCH SỬ PHÂN TÍCH")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.secondary)
+                    .tracking(1.5)
+                
+                Spacer()
+                
+                Button {
+                    withAnimation {
+                        vm.clearHistory()
+                    }
+                    Haptics.impact()
+                } label: {
+                    Text("Xoá tất cả")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.red)
+                }
+            }
+            .padding(.horizontal, 4)
+            
+            VStack(spacing: 12) {
+                ForEach(vm.history) { item in
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(item.type == "slideshow" ? Color.blue.opacity(0.15) : Color.pink.opacity(0.15))
+                                .frame(width: 44, height: 44)
+                            
+                            Image(systemName: item.type == "slideshow" ? "photo.on.rectangle.angled" : "play.rectangle.fill")
+                                .font(.system(size: 18))
+                                .foregroundStyle(item.type == "slideshow" ? .blue : .pink)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("@\(item.author)")
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.primary)
+                            
+                            Text(item.desc.isEmpty ? "Không có mô tả" : item.desc)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        
+                        Spacer()
+                        
+                        Button {
+                            vm.loadFromHistory(item)
+                        } label: {
+                            Image(systemName: "arrow.up.right.circle.fill")
+                                .font(.title2)
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(.blue)
+                        }
+                        
+                        Button {
+                            withAnimation {
+                                vm.deleteHistoryItem(item)
+                            }
+                            Haptics.impact()
+                        } label: {
+                            Image(systemName: "xmark.circle")
+                                .font(.title3)
+                                .foregroundStyle(.red.opacity(0.7))
+                        }
+                    }
+                    .padding(12)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    )
+                }
+            }
+        }
+        .padding(.top, 16)
+    }
+}
+
+struct VideoPlayerView: View {
+    let url: URL
+    @State private var player: AVPlayer?
+    
+    var body: some View {
+        ZStack {
+            if let player = player {
+                VideoPlayer(player: player)
+                    .onAppear {
+                        player.play()
+                    }
+                    .onDisappear {
+                        player.pause()
+                    }
+            } else {
+                Rectangle()
+                    .fill(Color.black.opacity(0.1))
+                    .overlay(ProgressView())
+            }
+        }
+        .onAppear {
+            player = AVPlayer(url: url)
+        }
     }
 }
 

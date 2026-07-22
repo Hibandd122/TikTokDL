@@ -40,3 +40,14 @@ enum APIError: LocalizedError {
         }
     }
 }
+
+struct DownloadHistoryItem: Identifiable, Codable, Equatable {
+    var id: String { timestamp.description + author }
+    let author: String
+    let desc: String
+    let type: String
+    let timestamp: Date
+    let videoURL: String?
+    let imageURLs: [String]
+    let audioURL: String?
+}
